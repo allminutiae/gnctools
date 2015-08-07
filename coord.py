@@ -42,7 +42,7 @@ class Rotation:
     @staticmethod
     def fromQuat(quat, scalarpos='first'):
         """
-        Constructs a Rotation object from a quaternion.
+        Factory method to construct a Rotation object from a quaternion.
 
         :param quat:      quaternion; numpy.ndarray or other 4-element iterable
         :param scalarpos: 'first' or 'last'
@@ -126,6 +126,42 @@ class Rotation:
 
         return rot
 
+    @property
+    def quat(self):
+        return self._qs, self._qx, self._qy, self._qz
+
+    def apply_to(self, other):
+        """
+        Applies this rotation to another rotation or a vector.
+
+        :param   other: vector
+
+        :return:
+
+        NOTE: this is equivalent to the overloading of the multiplication operator (see __mul__() below)
+        """
+
+
+
+    @staticmethod
+    def _in_radians(a, b, c, units):
+        """
+
+        :param a:
+        :param b:
+        :param c:
+        :param units: 'deg' for deg, anything else assumes rad
+        :return:      angles in radians
+        """
+        # TODO: add valueError for units not being 'rad' or 'deg'
+
+        if units == 'deg':
+            a *= Rotation.PIOVER180
+            b *= Rotation.PIOVER180
+            c *= Rotation.PIOVER180
+
+        return a, b, c
+
     @staticmethod
     def __mult_quat_quat(q1, q2):
         """
@@ -160,12 +196,11 @@ class Rotation:
 
         return x, y, z
 
-    @property
-    def quat(self):
-        return self._qs, self._qx, self._qy, self._qz
+    #TODO: add __check_type and __sanitize_type methods (static) to sanitize inputs, centralize this
+    #      job so other methods can use the same code to do this job.
 
     def __mul__(self,
-                 other: 'iterable of length 3 (vector) or another rotation'):
+                other: 'iterable of length 3 (vector) or another rotation'):
         """
         Overloads the * operator.  Applies the rotation to a vector or other rotation;
         returns the result of the rotation.
@@ -188,32 +223,3 @@ class Rotation:
             raise TypeError('Operand only supported for operations between 2 Rotation objects or \
                              by 1 Rotation object and a 3-element iterable')
 
-
-    #def append(self,
-    #           rot:  Rotation):
-#        """
-#        Adds a rotation to this one, to be conducted immediately following this one.
-#
-#        :param rot:
-#        :return:
-#        """
-        # TODO: trade on maintaining a list of rotations to be applied in order
-
-    @staticmethod
-    def _in_radians(a, b, c, units):
-        """
-
-        :param a:
-        :param b:
-        :param c:
-        :param units: 'deg' for deg, anything else assumes rad
-        :return:      angles in radians
-        """
-        # TODO: add valueError for units not being 'rad' or 'deg'
-
-        if units == 'deg':
-            a *= Rotation.PIOVER180
-            b *= Rotation.PIOVER180
-            c *= Rotation.PIOVER180
-
-        return a, b, c
