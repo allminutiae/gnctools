@@ -69,6 +69,7 @@ class Rotation:
             rot._qy = quat[1]
             rot._qz = quat[2]
 
+        rot._normalize()
         return rot
 
     @staticmethod
@@ -130,6 +131,43 @@ class Rotation:
     def quat(self):
         return self._qs, self._qx, self._qy, self._qz
 
+    @property
+    def dcm(self):
+        """
+        Returns the DCM representing the rotation.
+
+        :return: an numpy.ndarray
+        """
+
+        d = self._qs
+        a = self._qx
+        b = self._qy
+        c = self._qz
+
+        dd = d * d
+        aa = a * a
+        bb = b * b
+        cc = c * c
+        ab = a * b
+        ac = a * c
+        ad = a * d
+        bc = b * c
+        bd = b * d
+        cd = c * d
+
+        dcm = np.ndarray((3,3))
+        dcm[0, 0] = dd + aa - bb - cc;
+        dcm[0, 1] = 2.0 * ( cd + ab);
+        dcm[0, 2] = 2.0 * ( ac - bd);
+        dcm[1, 0] = 2.0 * ( ab - cd);
+        dcm[1, 1] = dd - aa + bb - cc;
+        dcm[1, 2] = 2.0 * ( ad + bc);
+        dcm[2, 0] = 2.0 * ( bd + ac);
+        dcm[2, 1] = 2.0 * ( bc - ad);
+        dcm[2, 2] = dd - aa - bb + cc;
+
+        return dcm
+
     def apply_to(self, other):
         """
         Applies this rotation to another rotation or a vector.
@@ -141,7 +179,17 @@ class Rotation:
         NOTE: this is equivalent to the overloading of the multiplication operator (see __mul__() below)
         """
 
+    def _normalize(self):
+        """
+        Normalizes the internal quaternion.
 
+        :return: Nothing.
+        """
+
+        q = np.ndarray((self._qs, self._qx, self._qy, self._qz))
+        q /= np.linalg.norm(q)
+
+        self._qs, self._qx, self._qy, self._qz = q
 
     @staticmethod
     def _in_radians(a, b, c, units):
