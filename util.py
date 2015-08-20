@@ -42,8 +42,8 @@ def runExe(exe_name:  str,
 
 def convertToMAT(path_old:     str,
                  path_new:     str,
-                 includecols:  'iterable' = None,
-                 delete_orig:  bool       = False):
+                 includecols:  tuple = None,
+                 delete_orig:  bool  = False):
     """
     Converts a given table file to MAT file format.  Stores the contents as nx1 arrays by header names.
 
@@ -54,20 +54,21 @@ def convertToMAT(path_old:     str,
     :return: nothing
     """
     # TODO: add some parsing to map common column names to a standard formatted set (i.e. "Time" "time (s)" etc.)
+    # TODO: add more "unit cleansing" stuff
 
     with open(path_old, 'r') as f:
         lines = list(f)
-        hdr   = lines.pop(0).split()                                             # remove header line, split by whitespace
-        hdr   = [h for h in hdr if h != '(ft/s)' and h != '(deg/s)']             # clean units stuff
+        hdr   = lines.pop(0).split()                                          # remove header line, split by whitespace
+        hdr   = [h for h in hdr if h != '(ft/s)' and h != '(deg/s)']          # clean units stuff
         # TODO: make above only take header items for which data exists
-        if includecols is None: includecols = [ii for ii in range(len(hdr))]     # make includecols include all if not specified
-        arrays = [np.empty((len(lines), 1), dtype=float) for col in includecols] # make list of preallocated arrays
+        if includecols is None: includecols = [ii for ii in range(len(hdr))]  # make includecols include all if not specified
+        arrays = [np.empty((len(lines)), dtype=float) for col in includecols] # make list of preallocated arrays
         for row, line in enumerate(lines):
             words = line.split()                        # break line into tokens
             for array, col in zip(arrays, includecols): # loop through include cols
                 array[row] = float(words[col])          # put values in array
 
-    data = {hdr[col] : array for col, array in zip(includecols, arrays)}
+    data = {hdr[col] : np.squeeze(array) for col, array in zip(includecols, arrays)}
 
     savemat(path_new, data)
 
