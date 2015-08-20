@@ -1,10 +1,16 @@
 import numpy as np
 
-def asd(data:  'a 1xn (or nx1) numpy.ndarray', # the data to be asd'ed
+def psd(data:  'a 1xn (or nx1) numpy.ndarray', # the data to be asd'ed
         fsamp: int):                           # sample frequency
     """
-    returns: the amplitude spectral density of the given array, in dB.
+    returns: the power spectral density of the given array, in dB.
              an array of corresponding frequencies
+
+    NOTE: this algorithm mirrors the "periodogram" function in Matlab, but
+          with the addition of zero-padding to the nearest power of 2 for fft
+          function stability.
+
+          source: http://www.mathworks.com/help/signal/ug/psd-estimate-using-fft.html
     """
 
     nsamples  = len(data)
@@ -19,8 +25,9 @@ def asd(data:  'a 1xn (or nx1) numpy.ndarray', # the data to be asd'ed
     else:
         padded = np.resize(data, targetlen)
 
-    ampl    = np.abs(np.fft.rfft(padded))/nsamples*2 # *2 because we're only looking at the + side
-    ampl_db = 20.*np.log10(ampl)
-    freqs   = np.fft.rfftfreq(targetlen, d=1./fsamp)
+    psdx   = np.power(np.abs(np.fft.rfft(padded)), 2)/nsamples/fsamp
+    psdx[1:-1] = psdx[1:-1]*2
+    psd_db = 10.*np.log10(psdx)
+    freqs  = np.fft.rfftfreq(targetlen, d=1./fsamp)
 
-    return freqs, ampl_db
+    return freqs, psd_db
