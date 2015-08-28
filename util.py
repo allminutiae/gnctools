@@ -74,3 +74,21 @@ def convertToMAT(path_old:     str,
 
     if delete_orig:
         remove(path_old)
+
+def sanitize_to_iterable(var):
+    """
+    Takes an iterable or single object and makes it iterable.  If given a dict, returns dict.values().
+
+    :param var:
+    :return:
+    """
+    if isinstance(var, dict):
+        variter = var.values()
+    else:
+        try:
+            iter(var)
+            variter = var
+        except TypeError:
+            variter = (var,)
+
+    return variter
