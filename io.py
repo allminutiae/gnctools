@@ -25,6 +25,24 @@ def loadIntoArray(fname:      str,
                          delim_whitespace = True)
         return df.values, []
 
+def loadmat(fname:     str,
+            mdict:     dict = None,
+            appendmat: bool = True,
+            **kwargs):
+    """
+    Wrapper function for scipy.io.loadmat which uses numpy.squeeze to remove singular dimensions from arrays
+    in the dict returned.
+
+    API doc: http://docs.scipy.org/doc/scipy-0.16.0/reference/generated/scipy.io.loadmat.html
+    """
+
+    mat = loadmat(fname, mdict, appendmat, **kwargs)
+
+    for k in mat.keys():
+        mat[k] = np.squeeze(mat[k])
+
+    return mat
+
 def writeArrayToFile(fname:   str,                 # name & location to save
                      data:    '2D numpy.ndarray',  # matrix of data to write
                      header:  list = (),           # header line
