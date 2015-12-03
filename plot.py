@@ -1,4 +1,11 @@
 import matplotlib.pyplot as plt
+import matplotlib.patches
+from itertools import product
+from geohagan.util import sanitize_to_iterable
+from matplotlib.font_manager import FontProperties
+
+# TODO: clean up this module--there's lots of stuff that doesn't even need to be here anymore (size/appearance
+#       tweaks etc that I know the API well enough for now)
 
 def fullscreen_subplots(*args, **kwargs):
     """
@@ -19,6 +26,189 @@ def fullscreen_subplots(*args, **kwargs):
     plt.get_current_fig_manager().window.showMaximized()
 
     return fig, ax
+
+def embiggen_font():
+    fp = FontProperties()
+    fp.set_size('20')
+    fp.set_weight('normal')
+    fp.set_family('sans-serif')
+
+def subplot_grid(rowkeys  : tuple,
+                 colkeys  : tuple,
+                 titles   : tuple = None,
+                 xlabels  : tuple = None,
+                 ylabels  : tuple = None,
+                 suptitle : str   = None,
+                 xlim     : tuple = None,
+                 grid     : bool  = True):
+    """
+    Returns a dict of subplot axes sharing x axis by column and y axis by row, indexed by rowkeys and colkeys.
+
+    :param rowkeys:  row keys for returned dict
+    :param colkeys:  column keys for returned dict
+    :param titles:   title for each column
+    :param xlabels:
+    :param ylabels:
+    :param suptitle: supertitle; title of the whole group of subplots
+    :return:
+    """
+    # TODO: add xlim
+    # TODO: add ability to not specify 2nd axis of keys when only a row/column of plots is needed
+
+    embiggen_font()
+
+    if not titles:  titles  = ['' for col in colkeys]
+    if not xlabels: xlabels = ['' for col in colkeys]
+    if not ylabels: ylabels = ['' for row in rowkeys]
+
+    assert(len(colkeys)==len(titles)==len(xlabels))
+    assert(len(rowkeys)==len(ylabels))
+
+    fig      = plt.figure(figsize=(20.5, 10.5), dpi=92) # good for my screen
+    axes     = {}
+    firstrow = rowkeys[0]
+    firstcol = colkeys[0]
+    lastrow  = rowkeys[-1]
+    lastcol  = colkeys[-1]
+    for ii, (row, col) in enumerate(product(rowkeys, colkeys)):
+        if row == firstrow and col == firstcol:
+            axes[row, col] = fig.add_subplot(len(rowkeys), len(colkeys), ii+1) # top left subplot is independent
+        elif row == firstrow:
+            axes[row, col] = fig.add_subplot(len(rowkeys), len(colkeys), ii+1, sharey=axes[firstrow, firstcol]) # first row only share y axis
+        elif col == firstcol:
+            axes[row, col] = fig.add_subplot(len(rowkeys), len(colkeys), ii+1, sharex=axes[firstrow, firstcol]) # first col only share x axis
+        else:
+            axes[row, col] = fig.add_subplot(len(rowkeys), len(colkeys), ii+1, sharex=axes[firstrow, col], sharey=axes[row, firstcol]) # all others share x, y with col, row respectively
+
+    # title columns, add x labels
+    for col, title, xlab in zip(colkeys, titles, xlabels):
+        axes[firstrow, col].set_title(title, fontsize=14)
+        axes[rowkeys[-1], col].set_xlabel(xlab)
+
+    # add y labels, add y tick labels on far right if necessary
+    for row, ylab in zip(rowkeys, ylabels):
+        axes[row, firstcol].set_ylabel(ylab)
+        if len(colkeys) > 1:
+            axes[row, lastcol].yaxis.tick_right()
+
+    # hide redundant x and y tick labels
+    for row, col in product(rowkeys, colkeys):
+        if row != lastrow: hide_xticklabels(axes[row, col])
+        if col != firstcol and col != lastcol: hide_yticklabels(axes[row, col])
+
+    subplot_spacing = {'bottom' : 0.075,
+                       'right'  : 0.95,
+                       'left'   : 0.075,
+                       'top'    : 0.95,
+                       'wspace' : 0.075,
+                       'hspace' : 0.1}
+
+    # allow room for suptitle
+    if (isinstance(suptitle, bool) and suptitle == True) or isinstance(suptitle, str): subplot_spacing['top'] = .9
+    if isinstance(suptitle, str): plt.suptitle(suptitle, fontsize=22)
+
+    fig.subplots_adjust(**subplot_spacing)
+
+    if grid: add_grid(axes.values())
+
+    if not xlim is None: set_xlim(axes, xlim)
+
+    return fig, axes
+
+def add_grid(axes : 'single axes or dict/iterable of axes'):
+
+    axesiterable = sanitize_to_iterable(axes)
+
+    for a in axesiterable:
+        a.grid(b=True, which='major', linestyle='-', color=(.7, .7, .7))
+        a.grid(b=True, which='minor')
+
+    return axes
+
+def add_legend(axes     : 'iterable or single axes object',
+               colors   : tuple,
+               styles   : tuple,
+               names    : tuple,
+               loc      : str    = 'best',
+               fancybox : bool   = True,
+               **kwargs):
+    """
+    Convenience function to create a legend according to input parameters and add it to the axes or figure object(s) given.
+
+    :param axes:     single axes or figure object or iterable
+    :param colors:   iterable of colors for lines (or patches) in legend
+    :param styles:   iterable of linestyles for lines or patches in legend (to specify patch, use 'patch')
+    :param names:    iterable of line/patch labels for legend
+    :param loc:      location string (defaults to 'best')
+    :param fancybox: rounded corners (default True)
+
+    :return: a legend object created according to input parameters
+    """
+    # TODO get rid of sanitizing a dict to dict.values(); just require iterable
+    # TODO make this return an iterable if passed an iterable
+
+    assert(len(colors)==len(styles)==len(names))
+    legend = None
+    axesiterable = sanitize_to_iterable(axes)
+
+    fp       = FontProperties()
+    origsize = fp.get_size()
+    fp.set_size('small')
+
+    lines = []
+    for c, s in zip(colors, styles):
+        if s == 'patch':
+            lines.append(matplotlib.patches.Patch(color=c))
+        else:
+            lines.append(plt.Line2D(range(10), range(10), color=c, linestyle=s))
+
+    for a in axesiterable: legend = a.legend(lines, names, loc=loc, fancybox=fancybox, **kwargs)
+
+    fp.set_size(origsize) # re-set font size
+
+    return legend
+
+def hide_xticklabels(axes : 'iterable or single axes object'):
+    axesiterable = sanitize_to_iterable(axes)
+
+    for a in axesiterable:
+        for label in a.get_xticklabels():
+            label.set_visible(False)
+
+def hide_yticklabels(axes : 'iterable or single axes object'):
+    axesiterable = sanitize_to_iterable(axes)
+
+    for a in axesiterable:
+        for label in axes.get_yticklabels():
+            label.set_visible(False)
+
+def set_logx(axes):
+    axesiterable = sanitize_to_iterable(axes)
+
+    for a in axesiterable:
+        a.set_xscale('log')
+
+def set_xlim(axes,
+             lims: tuple):
+
+    assert(len(lims)==2)
+    assert([isinstance(l, float) or isinstance(l, int) for l in lims])
+
+    axesiterable = sanitize_to_iterable(axes)
+
+    for a in axesiterable:
+        a.set_xlim(lims)
+
+def set_ylim(axes,
+             lims: tuple):
+
+    assert(len(lims)==2)
+    assert([isinstance(l, float) or isinstance(l, int) for l in lims])
+
+    axesiterable = sanitize_to_iterable(axes)
+
+    for a in axesiterable:
+        a.set_ylim(lims)
 
 def bode(freq:  'numpy array-like',
          gain:  'numpy array-like',
