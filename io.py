@@ -3,6 +3,8 @@ from os import listdir, mkdir, makedirs
 from os.path import isdir, join
 from shutil import rmtree, move
 import numpy as np
+import scipy.io
+import csv
 
 def loadIntoArray(fname:      str,
                   headerline: bool = True,
@@ -17,13 +19,43 @@ def loadIntoArray(fname:      str,
         df = pd.read_csv(filepath_or_buffer = fname,
                          dtype = np.float64,
                          delim_whitespace = True)
-        return df.values, df.columns
+        return df.values, df.columns #TODO: this is returning df.columns as an Index object, need to make it just a list
     else:
         df = pd.read_csv(filepath_or_buffer = fname,
                          header = None,
                          dtype = np.float64,
                          delim_whitespace = True)
         return df.values, []
+
+def loadcsv(fname:      str,
+            headerline: bool = True):
+    """
+
+    :param fname:
+    :param headerline:
+    :return:
+    """
+
+    # get the header:
+    with open(fname) as f:
+        hdr = f.readline().split(sep=',')
+        headers = [h.strip() for h in hdr]
+
+    with open(fname) as f:
+        reader = csv.DictReader(f, fieldnames=headers)
+        dat = {}
+        for row in reader:
+            for h in headers:
+                if h in dat.keys():
+                    dat[h].append(row[h])
+                else:
+                    dat[h] = []
+
+
+    for h in headers:
+        dat[h] = np.array(dat[h], dtype=float)
+
+    return dat
 
 def loadmat(fname:     str,
             mdict:     dict = None,
@@ -36,7 +68,7 @@ def loadmat(fname:     str,
     API doc: http://docs.scipy.org/doc/scipy-0.16.0/reference/generated/scipy.io.loadmat.html
     """
 
-    mat = loadmat(fname, mdict, appendmat, **kwargs)
+    mat = scipy.io.loadmat(fname, mdict, appendmat, **kwargs)
 
     for k in mat.keys():
         mat[k] = np.squeeze(mat[k])
