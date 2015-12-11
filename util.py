@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 
 from os import chdir, getcwd, remove
 from os.path import abspath
@@ -42,69 +41,36 @@ def runExe(exe_name:  str,
         move(key, value)
 
 def share_domain(domains: 'iterable of iterables',
-                 ranges:  'iterable of iterables',
-                 domain_names: tuple = None,
-                 range_names:  tuple = None):
+                 ranges:  'iterable of iterables'):
     """
     Interpolates arrays to a common domain, for the extent of the domain given (does not extend beyond the last
-    element).
+    element).  Trims datasets such that only the overlapping portion is returned.
 
-    :param domains:      iterable of iterables; must be monotonically increasing
-    :param ranges:       iterable of iterables. NaNs at the ends will result in removal of the NaN as well as the corresponding
-                         domain value in the range and domain returned.  NaNs not at the ends will be interpolated to the shared
-                         domain.
-    :param domain_names: optional list/tuple of names for dictionary output
-    :param range_names:  optional list/tuple of names for dictionary output
+    :param domains:      iterable of 1-D arrays; must be monotonically increasing
+    :param ranges:       iterable of 1-D arrays
 
-    :return: tuple of domains, tuple of ranges, or, if domain_names and range_names are provided, dicts of domain and range
-
-    NOTE: if you want to insert points not already in any of the domains, you may submit an extra domain of the points you
-          want, with a corresponding range of all NaNs.  The corresponding returned array will be empty but the points
-          will be inserted in the shared domain as long as they did not extend the upper or lower bounds of that domain.
+    :return: combined domain, list of ranges
     """
-    # TODO: fix non removal of leading NaNs in domain return
     # input checks ----------------
     for d, r in zip(domains, ranges):
         assert(len(d)==len(r))
-    if not domain_names is None:
-        assert(len(domain_names)==len(domains))
-    if not range_names is None:
-        assert(len(range_names)==len(ranges))
+        assert(is_monotonic(d))
     # -----------------------------
 
-    x_list = [np.squeeze(d) for d in domains]
-    x_comb = np.unique(np.concatenate(x_list))
+    # get floor/ceil of overlapping section, find corresponding indices for each dataset
+    x_list  = [np.squeeze(d) for d in domains]
+    x_floor = np.max([np.min(d) for d in x_list])
+    x_ceil  = np.min([np.max(d) for d in x_list])
 
-    if not range_names is None:
-        colnames = range_names
-    else:
-        colnames = ['{}'.format(i) for i in range(len(ranges))]
+    # get combined domain points
+    x_comb  = np.unique(np.concatenate(x_list))
+    inds    = np.where(x_floor <= x_comb)
+    inds    = np.where(x_ceil  >= x_comb[inds])
 
-    df = pd.DataFrame(index=x_comb, columns=colnames, dtype=float)
-    for d, r, c in zip(domains, ranges, colnames):
-        for x, y in zip(d, r):
-            df.loc[x, c] = y
+    # interpolate to combined domain
+    newranges = [np.interp(x_comb[inds], x, y) for x, y, in zip(x_list, ranges)]
 
-    first_ind   = [df[c].first_valid_index() for c in colnames] # this could be the problem; pandas may have changed behavior of first_valid_index()
-    rangesisnan = [np.isnan(df[c].values) for c in colnames]
-    last_ind    = []
-    for r in rangesisnan:
-        for isnan, ind in zip(reversed(r), reversed(range(len(r)))):
-            if not isnan:
-                last_ind.append(ind)
-                break
-
-    df         = df.interpolate()
-    fullx      = df.index.values
-    fullranges = [df[c].values for c in colnames]
-
-    newdomains = tuple([fullx[f:l+1] for f, l in zip(first_ind, last_ind)])
-    newranges  = tuple([fr[f:l+1] for fr, f, l in zip(fullranges, first_ind, last_ind)])
-
-    if not domain_names is None and not range_names is None:
-        return {n : d for n, d in zip(domain_names, newdomains)}, {n : r for n, r in zip(range_names, newranges)}
-    else:
-        return newdomains, newranges
+    return x_comb[inds], newranges
 
 def convertToMAT(path_old:     str,
                  path_new:     str,
