@@ -6,6 +6,47 @@ from matplotlib.font_manager import FontProperties
 
 # TODO: clean up this module--there's lots of stuff that doesn't even need to be here anymore (size/appearance
 #       tweaks etc that I know the API well enough for now)
+def align_yvalues(ax1, v1, ax2, v2):
+    """
+    Adjusts ax2 y limits such that v2 is aligned with v1.
+
+    :param ax1:
+    :param v1:
+    :param ax2:
+    :param v2:
+    :return:
+    """
+
+    miny, maxy = ax2.get_ylim() # current y lims
+
+    _, y1 = ax1.transData.transform((0, v1)) # transforming v1 to display coords
+    _, y2 = ax2.transData.transform((0, v2)) # transforming v2 to display coords
+    adjust_yaxis(ax2, (y1 - y2) / 2, v2)
+    adjust_yaxis(ax1, (y2 - y1) / 2, v1)
+
+def adjust_yaxis(ax, ydiff, v):
+    """
+    Shifts the y axis by ydiff, maintaining v at the same location.
+
+    :param ax:
+    :param ydif:
+    :param v:
+    :return:
+    """
+    # TODO: need to add code to check the major ticks and round lims up to the next major tick
+    # TODO: secondary axis isn't getting optimal zoom, just whatever works; need to add an argument to hint, I think
+
+    inv = ax.transData.inverted()
+    _, dy = inv.transform((0, 0)) - inv.transform((0, ydiff))
+    miny, maxy = ax.get_ylim()
+    miny, maxy = miny - v, maxy - v
+    if -miny>maxy or (-miny==maxy and dy > 0):
+        nminy = miny
+        nmaxy = miny*(maxy+dy)/(miny+dy)
+    else:
+        nmaxy = maxy
+        nminy = maxy*(miny+dy)/(maxy+dy)
+    ax.set_ylim(nminy+v, nmaxy+v)
 
 def fullscreen_subplots(*args, **kwargs):
     """
