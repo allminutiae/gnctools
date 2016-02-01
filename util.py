@@ -41,7 +41,7 @@ def runExe(exe_name:  str,
         move(key, value)
 
 def share_domain(domains: 'iterable of iterables',
-                 ranges:  'iterable of iterables'):
+                 ranges:  'iterable of np.array'):
     """
     Interpolates arrays to a common domain, for the extent of the domain given (does not extend beyond the last
     element).  Trims datasets such that only the overlapping portion is returned.
@@ -50,27 +50,61 @@ def share_domain(domains: 'iterable of iterables',
     :param ranges:       iterable of 1-D arrays
 
     :return: combined domain, list of ranges
+
+    NOTE:
+        - will have an issue with equal-dimensioned arrays (won't be able to distinguish range data entities)
     """
+    # TODO: add ability to inject points in domain
     # input checks ----------------
+    assert(len(domains) == len(ranges))
     for d, r in zip(domains, ranges):
-        assert(len(d)==len(r))
         assert(is_monotonic(d))
+        assert(len(d) in r.shape)
+        assert(len(r.shape) <= 2)
     # -----------------------------
 
     # get floor/ceil of overlapping section, find corresponding indices for each dataset
-    x_list  = [np.squeeze(d) for d in domains]
-    x_floor = np.max([np.min(d) for d in x_list])
-    x_ceil  = np.min([np.max(d) for d in x_list])
+    x_floor = np.max([np.min(d) for d in domains])
+    x_ceil  = np.min([np.max(d) for d in domains])
 
     # get combined domain points
-    x_comb  = np.unique(np.concatenate(x_list))
+    x_comb  = np.unique(np.concatenate(domains))
     inds    = np.where(x_floor <= x_comb)
     inds    = np.where(x_ceil  >= x_comb[inds])
 
-    # interpolate to combined domain
-    newranges = [np.interp(x_comb[inds], x, y) for x, y, in zip(x_list, ranges)]
+    # put in column-array format for slicing up into individual columns:
+    newranges = [np.transpose(r) if len(r.shape) > 1 and len(d) == r.shape[1] else r for d, r in zip(domains, ranges)]
 
-    return x_comb[inds], newranges
+    # split out into single columns
+    x_list = []
+    y_list = []
+    dims   = []
+    for x, r in zip([np.squeeze(d) for d in domains], newranges):
+        if len(r.shape) > 1:
+            dims.append(r.shape[1])
+            for col in range(r.shape[1]):
+                x_list.append(x)
+                y_list.append(r[:, col])
+        else:
+            dims.append(1)
+            x_list.append(x)
+            y_list.append(r)
+
+    # interpolate to combined domain
+    interpranges = [np.interp(x_comb[inds], x, y) for x, y, in zip(x_list, y_list)]
+
+    # need to loop through the interpranges and squish back together based on contents of dims
+    finalranges = []
+    for dim in dims:
+        if dim > 1:
+            matrix = []
+            for i in range(dim):
+                matrix.append(interpranges.pop(0))
+            finalranges.append(np.transpose(np.array(matrix))) # will naturally row stack if not specified
+        else:
+            finalranges.append(np.array(interpranges.pop(0)))
+
+    return x_comb[inds], finalranges
 
 def convertToMAT(path_old:     str,
                  path_new:     str,
