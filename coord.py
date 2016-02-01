@@ -129,7 +129,17 @@ class Rotation:
 
     @property
     def quat(self):
-        return self._qs, self._qx, self._qy, self._qz
+        """
+        Returns the quaternion representing this rotation.
+        """
+        return np.array((self._qs, self._qx, self._qy, self._qz))
+
+    @property
+    def quat_conj(self):
+        """
+        Returns the conjugate quaternion.
+        """
+        return self.quat * np.array((1, -1, -1, -1))
 
     @property
     def dcm(self):
@@ -155,16 +165,16 @@ class Rotation:
         bd = b * d
         cd = c * d
 
-        dcm = np.ndarray((3,3))
-        dcm[0, 0] = dd + aa - bb - cc;
-        dcm[0, 1] = 2.0 * ( cd + ab);
-        dcm[0, 2] = 2.0 * ( ac - bd);
-        dcm[1, 0] = 2.0 * ( ab - cd);
-        dcm[1, 1] = dd - aa + bb - cc;
-        dcm[1, 2] = 2.0 * ( ad + bc);
-        dcm[2, 0] = 2.0 * ( bd + ac);
-        dcm[2, 1] = 2.0 * ( bc - ad);
-        dcm[2, 2] = dd - aa - bb + cc;
+        dcm = np.empty((3,3))
+        dcm[0, 0] = dd + aa - bb - cc
+        dcm[0, 1] = 2.0 * ( cd + ab)
+        dcm[0, 2] = 2.0 * ( ac - bd)
+        dcm[1, 0] = 2.0 * ( ab - cd)
+        dcm[1, 1] = dd - aa + bb - cc
+        dcm[1, 2] = 2.0 * ( ad + bc)
+        dcm[2, 0] = 2.0 * ( bd + ac)
+        dcm[2, 1] = 2.0 * ( bc - ad)
+        dcm[2, 2] = dd - aa - bb + cc
 
         return dcm
 
@@ -179,6 +189,16 @@ class Rotation:
         NOTE: this is equivalent to the overloading of the multiplication operator (see __mul__() below)
         """
 
+    @property
+    def inverse(self):
+        """
+        Returns the inverse of this rotation.
+        """
+
+        d = sum(self.quat**2)
+
+        return Rotation.fromQuat(self.quat_conj / d)
+
     def _normalize(self):
         """
         Normalizes the internal quaternion.
@@ -186,14 +206,13 @@ class Rotation:
         :return: Nothing.
         """
 
-        q = np.ndarray((self._qs, self._qx, self._qy, self._qz))
-        q /= np.linalg.norm(q)
-
-        self._qs, self._qx, self._qy, self._qz = q
+        q = self.quat
+        self._qs, self._qx, self._qy, self._qz = q/np.linalg.norm(q)
 
     @staticmethod
     def _in_radians(a, b, c, units):
         """
+        Just converts 3 angles to radians.
 
         :param a:
         :param b:
@@ -258,7 +277,6 @@ class Rotation:
 
         :return:    the resulting rotated vector
         """
-        #TODO: add vector multiplication
 
         if isinstance(other, self.__class__):
             # rotate a rotation
