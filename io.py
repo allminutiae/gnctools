@@ -1,10 +1,17 @@
 import pandas as pd
+import numpy as np
+import scipy.io
+
 from os import listdir, mkdir, makedirs
 from os.path import isdir, join
 from shutil import rmtree, move
-import numpy as np
-import scipy.io
-import csv
+from linecache import getline
+
+# TODO: create a unified class which will:
+#           allow reading MAT, DAT, CSV, etc
+#           allow indexing by column name or column number
+#           allow writing to any format
+#           facilitate easy plotting/introspection
 
 def loadIntoArray(fname:      str,
                   headerline: bool = True,
@@ -27,35 +34,56 @@ def loadIntoArray(fname:      str,
                          delim_whitespace = True)
         return df.values, []
 
-def loadcsv(fname:      str,
-            headerline: bool = True):
+def loadtxt(fname:       str,
+            delimiter:   str  = None,
+            headerlen:   int  = 1,
+            commentchar: str  = '#'):
+    """
+    Wraps numpy.loadtxt, returning the data in a dict with the column names as keys.  Assumes single header line by
+    default.
+
+    :param   fname:       filename
+    :param   delimiter:   string separator; contiguous whitespace by default
+    :param   headerlen:   number of rows at the beginning of the file in which to expect a header
+    :param   commentchar: comment char to strip from beginning of header lines
+
+    :return: if rtnheader and headerlen >= 1: see below + list of column headers (2-tuple containing these)
+
+             if headerlen >= 1: a dict with data stored by column name (assumes last line of header has column name info)
+
+             if headerlen == 0: a 2-D array
+
     """
 
-    :param fname:
-    :param headerline:
-    :return:
+    dat = np.loadtxt(fname, delimiter=delimiter, skiprows=headerlen)
+
+    if headerlen >= 1:
+        headers = [h.strip() for h in getline(fname, headerlen).lstrip(commentchar).split(sep=delimiter)]
+    else:
+        headers   = False
+
+    if not headers:
+        return (dat, )
+    else:
+        datdict = {h : col for h, col in zip(headers, dat.T)}
+        return datdict, headers
+
+def savetxt(fname:    str,
+            datadict: dict,
+            header:   'ordered iterable of strings' = ()):
+    """
+    Writes an ascii-formatted file with the contents of datadict, in column order by header.
+
+    :param fname:    filename
+    :param datadict: dict containing individual columns of data
+    :param header:   iterable of header strings; used to specify write order
+
+    TODO: add a pass-through of the numpy 'fmt' variable which correctly formats the header
     """
 
-    # get the header:
-    with open(fname) as f:
-        hdr = f.readline().split(sep=',')
-        headers = [h.strip() for h in hdr]
-
-    with open(fname) as f:
-        reader = csv.DictReader(f, fieldnames=headers)
-        dat = {}
-        for row in reader:
-            for h in headers:
-                if h in dat.keys():
-                    dat[h].append(row[h])
-                else:
-                    dat[h] = []
-
-
-    for h in headers:
-        dat[h] = np.array(dat[h], dtype=float)
-
-    return dat
+    data_arr = np.array([datadict[h] for h in header]).T    # transposed because we want data in columns
+    headerstr = ''.join(['{:^25}'.format(h) for h in header]) # space pad to default np.savetxt width
+    np.savetxt(fname, data_arr, header=headerstr)
 
 def loadmat(fname:     str,
             mdict:     dict = None,
