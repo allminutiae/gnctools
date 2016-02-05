@@ -12,6 +12,7 @@ from linecache import getline
 #           allow indexing by column name or column number
 #           allow writing to any format
 #           facilitate easy plotting/introspection
+# TODO: also, make a better "load" function which can figure out what to do on its own
 
 def loadIntoArray(fname:      str,
                   headerline: bool = True,
@@ -63,7 +64,7 @@ def loadtxt(fname:       str,
         headers   = False
 
     if not headers:
-        return (dat, )
+        return (dat, None)
     else:
         datdict = {h : col for h, col in zip(headers, dat.T)}
         return datdict, headers
