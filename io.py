@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import scipy.io
 
+from collections import Iterable
 from os import listdir, mkdir, makedirs
 from os.path import isdir, join
 from shutil import rmtree, move
@@ -35,18 +36,58 @@ def loadIntoArray(fname:      str,
                          delim_whitespace = True)
         return df.values, []
 
+def loadtxt_col(fname:       str,
+                col:         'str or iterable of str',
+                **kwargs):
+    """
+    Wraps io.loadtxt, loading only the column(s) of interest.
+
+    :param fname:       filename
+    :param col:         the string header of the desired column of data, or a tuple containing the headers for multiple
+                        desired columns
+
+    --- kwargs to pass through to loadtxt():
+    :param delimiter:   string separator; contiguous whitespace by default
+    :param headerlen:   number of rows at the beginning of the file in which to expect a header
+    :param commentchar: comment char to strip from beginning of header lines
+
+    :return: an np.array containing the data from column requested
+
+    TODO: add ability to specify column number
+    TODO: refactor to save cpu time (maybe using np.loadtxt kwarg 'usecols'), otherwise delete this
+    TODO: move this into loadtxt, just add 'col' kwarg
+    """
+
+    dat, h = loadtxt(fname, **kwargs)
+
+    if isinstance(col, str):
+        if not col in h:
+            raise ValueError("The '{}' column requested is not present in {}".format(col, fname))
+        else:
+            return dat[col]
+    elif isinstance(col, Iterable):
+        if not set(col).issubset(set(h)):
+            raise ValueError("One or more columns requested are not present in {}".format(fname))
+        else:
+            return tuple([dat[c] for c in col])
+    else:
+        raise ValueError("Desired column(s) cannot be specified as type {}".format(type(col)))
+
 def loadtxt(fname:       str,
-            delimiter:   str  = None,
             headerlen:   int  = 1,
-            commentchar: str  = '#'):
+            commentchar: str  = '#',
+            **kwargs):
     """
     Wraps numpy.loadtxt, returning the data in a dict with the column names as keys.  Assumes single header line by
     default.
 
     :param   fname:       filename
-    :param   delimiter:   string separator; contiguous whitespace by default
     :param   headerlen:   number of rows at the beginning of the file in which to expect a header
     :param   commentchar: comment char to strip from beginning of header lines
+
+    -- kwargs:
+                delimiter:   string separator; contiguous whitespace by default
+                dtype:       data type for np.arrays; float by default
 
     :return: if rtnheader and headerlen >= 1: see below + list of column headers (2-tuple containing these)
 
@@ -56,22 +97,31 @@ def loadtxt(fname:       str,
 
     """
 
-    dat = np.loadtxt(fname, delimiter=delimiter, skiprows=headerlen)
+    dat = np.loadtxt(fname, skiprows=headerlen, **kwargs)
+
+    if 'delimiter' in kwargs.keys():
+        delim = kwargs['delimiter']
+    else:
+        delim = None
 
     if headerlen >= 1:
-        headers = [h.strip() for h in getline(fname, headerlen).lstrip(commentchar).split(sep=delimiter)]
+        with open(fname) as f:
+            for ii, line in enumerate(f):
+                if ii == headerlen - 1:
+                    break
+        headers = [h.strip() for h in line.lstrip(commentchar).split(sep=delim)]
     else:
         headers   = False
 
     if not headers:
-        return (dat, None)
+        return dat, None
     else:
         datdict = {h : col for h, col in zip(headers, dat.T)}
         return datdict, headers
 
 def savetxt(fname:    str,
             datadict: dict,
-            header:   'ordered iterable of strings' = ()):
+            header:   'ordered iterable of strings' = None):
     """
     Writes an ascii-formatted file with the contents of datadict, in column order by header.
 
@@ -79,10 +129,13 @@ def savetxt(fname:    str,
     :param datadict: dict containing individual columns of data
     :param header:   iterable of header strings; used to specify write order
 
-    TODO: add a pass-through of the numpy 'fmt' variable which correctly formats the header
+    TODO: do something smarter if no ordered header provided (i.e., try to locate "time" col, some rudimentary sort)
     """
 
-    data_arr = np.array([datadict[h] for h in header]).T    # transposed because we want data in columns
+    if header is None:
+        header = datadict.keys()
+
+    data_arr = np.array([datadict[h] for h in header]).T      # transposed because we want data in columns
     headerstr = ''.join(['{:^25}'.format(h) for h in header]) # space pad to default np.savetxt width
     np.savetxt(fname, data_arr, header=headerstr)
 
@@ -92,17 +145,24 @@ def loadmat(fname:     str,
             **kwargs):
     """
     Wrapper function for scipy.io.loadmat which uses numpy.squeeze to remove singular dimensions from arrays
-    in the dict returned.
+    in the dict returned.  Also returns a np.array if the mat file only contains 1 variable.
 
     API doc: http://docs.scipy.org/doc/scipy-0.16.0/reference/generated/scipy.io.loadmat.html
     """
 
+    NONDATAKEYS = ('__version__', '__globals__', '__header__')
+
     mat = scipy.io.loadmat(fname, mdict, appendmat, **kwargs)
 
-    for k in mat.keys():
+    keys = [k for k in mat.keys() if not k in NONDATAKEYS]
+
+    for k in keys:
         mat[k] = np.squeeze(mat[k])
 
-    return mat
+    if len(keys) == 1:
+        return mat[keys[0]]
+    else:
+        return mat
 
 def writeArrayToFile(fname:   str,                 # name & location to save
                      data:    '2D numpy.ndarray',  # matrix of data to write
