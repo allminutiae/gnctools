@@ -1,303 +1,139 @@
-import matplotlib.pyplot as plt
 import matplotlib.patches
-from itertools import product
-from geohagan.util import sanitize_to_iterable
-from matplotlib.font_manager import FontProperties
+import matplotlib.axis
+import matplotlib.axes
 
-# TODO: clean up this module--there's lots of stuff that doesn't even need to be here anymore (size/appearance
-#       tweaks etc that I know the API well enough for now)
-def align_yvalues(ax1, v1, ax2, v2):
-    """
-    Adjusts ax2 y limits such that v2 is aligned with v1.
+def cozero_twins(ax1, ax2):
+    # Align on zero.  Make tick/gridlines colinear
+    ZOOM_THRESHOLD = .25 # move ratio at which function decides to re-zoom the slave axis to fit both datasets
 
-    :param ax1:
-    :param v1:
-    :param ax2:
-    :param v2:
-    :return:
-    """
+    def prepend_tick(ticks: list,
+                     s:     float):
+        """
+        Adds a tick to the beginning of the tick list, spaced from the last tick by spacing s
 
-    miny, maxy = ax2.get_ylim() # current y lims
+        :param ticks: list of tick locations
+        :param s:     spacing between ticks
 
-    _, y1 = ax1.transData.transform((0, v1)) # transforming v1 to display coords
-    _, y2 = ax2.transData.transform((0, v2)) # transforming v2 to display coords
-    adjust_yaxis(ax2, (y1 - y2) / 2, v2)
-    adjust_yaxis(ax1, (y2 - y1) / 2, v1)
+        :return: None
+        """
+        ticks.insert(0, ticks[0] - s)
 
-def adjust_yaxis(ax, ydiff, v):
-    """
-    Shifts the y axis by ydiff, maintaining v at the same location.
+    def append_tick(ticks: list,
+                    s:     float):
+        """
+        Adds a tick to the end of the tick list, spaced from the last tick by spacing s
 
-    :param ax:
-    :param ydif:
-    :param v:
-    :return:
-    """
-    # TODO: need to add code to check the major ticks and round lims up to the next major tick
-    # TODO: secondary axis isn't getting optimal zoom, just whatever works; need to add an argument to hint, I think
+        :param ticks: list of tick locations
+        :param s:     spacing between ticks
 
-    inv = ax.transData.inverted()
-    _, dy = inv.transform((0, 0)) - inv.transform((0, ydiff))
-    miny, maxy = ax.get_ylim()
-    miny, maxy = miny - v, maxy - v
-    if -miny>maxy or (-miny==maxy and dy > 0):
-        nminy = miny
-        nmaxy = miny*(maxy+dy)/(miny+dy)
-    else:
-        nmaxy = maxy
-        nminy = maxy*(miny+dy)/(maxy+dy)
-    ax.set_ylim(nminy+v, nmaxy+v)
+        :return: None
+        """
 
-def fullscreen_subplots(*args, **kwargs):
-    """
-    Sets up full-screen subplot axes that are usually good for my screen (YMMV) and for saving to file.
-    Just wraps plt.subplots(), applies custom subplot spacing, and tells fig manager to show maximized.
-    """
-    # TODO: refactor the fullscreen-ness and adjustments into individual decorators instead of tweaking here
+        ticks.append(ticks[-1] + s)
 
-    subplot_spacing = {'bottom' : 0.075,
-                       'right'  : 0.95,
-                       'left'   : 0.075,
-                       'top'    : 0.95,
-                       'wspace' : 0.05,
-                       'hspace' : 0.075}
+    def equalize_ticks(ax1: matplotlib.axes.Axes,
+                       ax2: matplotlib.axes.Axes,
+                       v:   float):
+        """
+        Adds a tick to the axis that needs it, to either the lower or upper limit of the axis, as needed.
 
-    fig, ax = plt.subplots(*args, **kwargs)
-    fig.subplots_adjust(**subplot_spacing)
-    plt.get_current_fig_manager().window.showMaximized()
+        :param ax1: axis 1
+        :param ax2: axis 2
+        :param v:   value to align from both axes
 
-    return fig, ax
+        :return: lists of tick locations on axis 1, axis 2
+        """
 
-def embiggen_font():
-    fp = FontProperties()
-    fp.set_size('20')
-    fp.set_weight('normal')
-    fp.set_family('sans-serif')
+        t1 = ax1.get_yaxis().get_ticklocs().tolist()
+        t2 = ax2.get_yaxis().get_ticklocs().tolist()
 
-def subplot_grid(rowkeys  : tuple,
-                 colkeys  : tuple,
-                 titles   : tuple = None,
-                 xlabels  : tuple = None,
-                 ylabels  : tuple = None,
-                 suptitle : str   = None,
-                 xlim     : tuple = None,
-                 grid     : bool  = True):
-    """
-    Returns a dict of subplot axes sharing x axis by column and y axis by row, indexed by rowkeys and colkeys.
+        try:
+            t1.index(v)
+            t2.index(v)
+        except ValueError:
+            raise ValueError("Value {} not found in one or both axes".format(v))
 
-    :param rowkeys:  row keys for returned dict
-    :param colkeys:  column keys for returned dict
-    :param titles:   title for each column
-    :param xlabels:
-    :param ylabels:
-    :param suptitle: supertitle; title of the whole group of subplots
-    :return:
-    """
-    # TODO: add xlim
-    # TODO: add ability to not specify 2nd axis of keys when only a row/column of plots is needed
+        # add tick(s) to the axis requiring them:
+        while len(t1) - len(t2) < 0:
+            # figure out where to add them:
+            if tick_relpos(t1, v) > tick_relpos(t2, v):
+                append_tick(t1, abs(t1[1] - t1[0]))
+            else:
+                prepend_tick(t1, abs(t1[1] - t1[0]))
+        while len(t2) - len(t1) < 0:
+            if tick_relpos(t2, v) > tick_relpos(t1, v):
+                append_tick(t2, abs(t2[1] - t2[0]))
+            else:
+                prepend_tick(t2, abs(t2[1] - t2[0]))
 
-    embiggen_font()
+        ax1.get_yaxis().set_ticks(t1)
+        ax2.get_yaxis().set_ticks(t2)
 
-    if not titles:  titles  = ['' for col in colkeys]
-    if not xlabels: xlabels = ['' for col in colkeys]
-    if not ylabels: ylabels = ['' for row in rowkeys]
+        return t1, t2
 
-    assert(len(colkeys)==len(titles)==len(xlabels))
-    assert(len(rowkeys)==len(ylabels))
+    def tick_relpos(ticks: list,
+                    v:     float):
+        """
+        Calculates the relative position of the value within the list.
 
-    fig      = plt.figure(figsize=(20.5, 10.5), dpi=92) # good for my screen
-    axes     = {}
-    firstrow = rowkeys[0]
-    firstcol = colkeys[0]
-    lastrow  = rowkeys[-1]
-    lastcol  = colkeys[-1]
-    for ii, (row, col) in enumerate(product(rowkeys, colkeys)):
-        if row == firstrow and col == firstcol:
-            axes[row, col] = fig.add_subplot(len(rowkeys), len(colkeys), ii+1) # top left subplot is independent
-        elif row == firstrow:
-            axes[row, col] = fig.add_subplot(len(rowkeys), len(colkeys), ii+1, sharey=axes[firstrow, firstcol]) # first row only share y axis
-        elif col == firstcol:
-            axes[row, col] = fig.add_subplot(len(rowkeys), len(colkeys), ii+1, sharex=axes[firstrow, firstcol]) # first col only share x axis
-        else:
-            axes[row, col] = fig.add_subplot(len(rowkeys), len(colkeys), ii+1, sharex=axes[firstrow, col], sharey=axes[row, firstcol]) # all others share x, y with col, row respectively
+        :param ticks: list of tick locations
+        :param v:     value to search for
 
-    # title columns, add x labels
-    for col, title, xlab in zip(colkeys, titles, xlabels):
-        axes[firstrow, col].set_title(title, fontsize=14)
-        axes[rowkeys[-1], col].set_xlabel(xlab)
+        :return: float locating the tick specified by v on the interval [0, 1] where 1 is the last tick (100% of
+                 axis range) and 0 is the first tick (0% of the axis range)
+        """
+        return ticks.index(v)/(len(ticks) - 1)
 
-    # add y labels, add y tick labels on far right if necessary
-    for row, ylab in zip(rowkeys, ylabels):
-        axes[row, firstcol].set_ylabel(ylab)
-        if len(colkeys) > 1:
-            axes[row, lastcol].yaxis.tick_right()
+    def detect_extra_ticks(a: matplotlib.axis.Axis):
+        """
+        Detects the extraneous ticks on an axis, based on the data plotted.
 
-    # hide redundant x and y tick labels
-    for row, col in product(rowkeys, colkeys):
-        if row != lastrow: hide_xticklabels(axes[row, col])
-        if col != firstcol and col != lastcol: hide_yticklabels(axes[row, col])
+        :param a: axis to check for extraneous ticks
 
-    subplot_spacing = {'bottom' : 0.075,
-                       'right'  : 0.95,
-                       'left'   : 0.075,
-                       'top'    : 0.95,
-                       'wspace' : 0.075,
-                       'hspace' : 0.1}
+        :return:  tuple of tick indices which could be removed without clipping data
+        """
+        t = a.get_ticklocs()
+        return tuple([i for i in range(len(t) - 1) if t[i+1] < a.get_data_interval()[0]]
+                   + [i for i in range(1, len(t)) if t[i-1] > a.get_data_interval()[-1]])
 
-    # allow room for suptitle
-    if (isinstance(suptitle, bool) and suptitle == True) or isinstance(suptitle, str): subplot_spacing['top'] = .9
-    if isinstance(suptitle, str): plt.suptitle(suptitle, fontsize=22)
+    try:
+        ticks1, ticks2 = equalize_ticks(ax1, ax2, 0.0)
+    except ValueError:
+        return # do nothing if the values to align don't exist in both axes
 
-    fig.subplots_adjust(**subplot_spacing)
+    # get tick spacing (assumes evenly spaced)
+    sp1 = abs(ticks1[1] - ticks1[0])
+    sp2 = abs(ticks2[1] - ticks2[0])
+    if ticks1.index(0.0) != ticks2.index(0.0):
+        # shift ticks to align (if possible without zooming):
+        if abs(ticks1.index(0.0) - ticks2.index(0.0))/len(ticks1) <= ZOOM_THRESHOLD:
+            while ticks1.index(0.0) < ticks2.index(0.0):
+                # prepend to 1, append to 2:
+                prepend_tick(ticks1, sp1)
+                append_tick(ticks2, sp2)
+            while ticks2.index(0.0) < ticks1.index(0.0):
+                # prepend to 2, append to 1:
+                prepend_tick(ticks2, sp2)
+                append_tick(ticks1, sp1)
+            # re-tick axes
+            ax1.get_yaxis().set_ticks(ticks1)
+            ax2.get_yaxis().set_ticks(ticks2)
+            cozero_twins(ax1, ax2) # redo with zeros aligned
+        # can't shift; rezoom:
+        elif ticks2.index(0.0) > ticks1.index(0.0): # need to raise high limit of 2
+            lo, hi = ax2.get_ylim()
+            ax2.set_ylims(lo, lo + (len(ticks2) + 1) * sp2) # zooms to the equivalent of an additional tick
+            cozero_twins(ax1, ax2) # redo process with slight zoom out
+        # can't shift; rezoom:
+        elif ticks2.index(0.0) < ticks1.index(0.0): # need to lower the low limit of 2
+            lo, hi = ax2.get_ylim()
+            ax2.set_ylims(hi - (len(ticks2) + 1) * sp2, hi)
+            cozero_twins(ax1, ax2) # redo process with slight zoom out
 
-    if grid: add_grid(axes.values())
-
-    if not xlim is None: set_xlim(axes, xlim)
-
-    return fig, axes
-
-def add_grid(axes : 'single axes or dict/iterable of axes'):
-
-    axesiterable = sanitize_to_iterable(axes)
-
-    for a in axesiterable:
-        a.grid(b=True, which='major', linestyle='-', color=(.7, .7, .7))
-        a.grid(b=True, which='minor')
-
-    return axes
-
-def add_legend(axes     : 'iterable or single axes object',
-               colors   : tuple,
-               styles   : tuple,
-               names    : tuple,
-               loc      : str    = 'best',
-               fancybox : bool   = True,
-               **kwargs):
-    """
-    Convenience function to create a legend according to input parameters and add it to the axes or figure object(s) given.
-
-    :param axes:     single axes or figure object or iterable
-    :param colors:   iterable of colors for lines (or patches) in legend
-    :param styles:   iterable of linestyles for lines or patches in legend (to specify patch, use 'patch')
-    :param names:    iterable of line/patch labels for legend
-    :param loc:      location string (defaults to 'best')
-    :param fancybox: rounded corners (default True)
-
-    :return: a legend object created according to input parameters
-    """
-    # TODO get rid of sanitizing a dict to dict.values(); just require iterable
-    # TODO make this return an iterable if passed an iterable
-
-    assert(len(colors)==len(styles)==len(names))
-    legend = None
-    axesiterable = sanitize_to_iterable(axes)
-
-    fp       = FontProperties()
-    origsize = fp.get_size()
-    fp.set_size('small')
-
-    lines = []
-    for c, s in zip(colors, styles):
-        if s == 'patch':
-            lines.append(matplotlib.patches.Patch(color=c))
-        else:
-            lines.append(plt.Line2D(range(10), range(10), color=c, linestyle=s))
-
-    for a in axesiterable: legend = a.legend(lines, names, loc=loc, fancybox=fancybox, **kwargs)
-
-    fp.set_size(origsize) # re-set font size
-
-    return legend
-
-def hide_xticklabels(axes : 'iterable or single axes object'):
-    axesiterable = sanitize_to_iterable(axes)
-
-    for a in axesiterable:
-        for label in a.get_xticklabels():
-            label.set_visible(False)
-
-def hide_yticklabels(axes : 'iterable or single axes object'):
-    axesiterable = sanitize_to_iterable(axes)
-
-    for a in axesiterable:
-        for label in axes.get_yticklabels():
-            label.set_visible(False)
-
-def set_logx(axes):
-    axesiterable = sanitize_to_iterable(axes)
-
-    for a in axesiterable:
-        a.set_xscale('log')
-
-def set_xlim(axes,
-             lims: tuple):
-
-    assert(len(lims)==2)
-    assert([isinstance(l, float) or isinstance(l, int) for l in lims])
-
-    axesiterable = sanitize_to_iterable(axes)
-
-    for a in axesiterable:
-        a.set_xlim(lims)
-
-def set_ylim(axes,
-             lims: tuple):
-
-    assert(len(lims)==2)
-    assert([isinstance(l, float) or isinstance(l, int) for l in lims])
-
-    axesiterable = sanitize_to_iterable(axes)
-
-    for a in axesiterable:
-        a.set_ylim(lims)
-
-def bode(freq:  'numpy array-like',
-         gain:  'numpy array-like',
-         phase: 'numpy array-like',
-         axes:  'array/list/tuple of matplotlib supblot axes' = None,
-         **kwargs):
-    """
-    Does a bode plot.  If no axes are provided, creates own axes via the bodeSetup() function.
-
-    kwargs:
-        title    -- str, plot title
-        xlim     -- tuple (or other sequence) to denote x axis limits
-        gainlim  -- tuple (or other sequence) to denote gain y axis limits
-        phaselim -- tuple (or other sequence) to denote phase y axis limits
-
-    returns:
-        figure -- matplotlib.figure object
-        axes   -- numpy.ndarray of matplotlib.axis._subplot.SubplotAxes (2 elements)
-    """
-    # TODO: move the grid setup (and axis hiding, ticks, etc) into a setup function
-
-    if not axes:
-        fig, axes = fullscreen_subplots(2, 1, sharex=True)
-
-    gainlim = kwargs.get('gainlim', None)
-    phaselim = kwargs.get('phaselim', None)
-    title = kwargs.get('title', None)
-    xlim = kwargs.get('xlim', None)
-
-    axes[0].plot(freq, gain)
-    if gainlim: axes[0].set_ylim(gainlim)
-    if title: axes[0].set_title(title)
-    axes[0].set_ylabel('Gain (dB)')
-
-    axes[1].plot(freq, phase)
-    if phaselim: axes[1].set_ylim(phaselim)
-    axes[1].set_xlabel('Frequency (Hz)')
-    axes[1].set_ylabel('Phase (deg)')
-
-    for a in axes:
-        a.set_xscale('log')
-        if xlim: a.set_xlim(xlim)
-        # gridlines
-        a.grid(b=True, which='major', linestyle='-', color=(.6, .6, .6))
-        a.grid(b=True, which='minor')
-        # hide axes borders
-        a.spines['top'].set_visible(False)
-        # hide ticks too
-        a.xaxis.set_ticks_position('bottom')
-
-    return axes[0].figure, axes
+    # trim unnecessary ticks
+    to_remove = set(detect_extra_ticks(ax1.get_yaxis())) & set(detect_extra_ticks(ax2.get_yaxis()))
+    newticks  = [i for i in range(len(ticks1)) if not i in to_remove]
+    t1 = [ticks1[i] for i in newticks]
+    t2 = [ticks2[i] for i in newticks]
+    ax1.set_ylim((t1[0], t1[-1]))
+    ax2.set_ylim((t2[0], t2[-1]))
