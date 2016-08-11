@@ -3,6 +3,7 @@ import numpy as np
 class Rotation:
     """
     Represents a coordinate system rotation in 3-space.
+
     """
 
     PIOVER180 = np.pi/180.
@@ -40,12 +41,13 @@ class Rotation:
         self._qz = float()
 
     @staticmethod
-    def fromQuat(quat, scalarpos='first'):
+    def fromQuat(quat,
+                 scalarfirst: bool = True):
         """
         Factory method to construct a Rotation object from a quaternion.
 
-        :param quat:      quaternion; numpy.ndarray or other 4-element iterable
-        :param scalarpos: 'first' or 'last'
+        :param quat:        quaternion; numpy.ndarray or other 4-element iterable
+        :param scalarfirst: denotes whether the scalar is first, if not, assumes last
 
         :return:
         """
@@ -58,12 +60,12 @@ class Rotation:
                 raise ValueError('Argument must be a 4-element iterable of floats')
 
         rot = Rotation()
-        if scalarpos=='first':
+        if scalarfirst:
             rot._qs = quat[0]
             rot._qx = quat[1]
             rot._qy = quat[2]
             rot._qz = quat[3]
-        elif scalarpos=='last':
+        else:
             rot._qs = quat[3]
             rot._qx = quat[0]
             rot._qy = quat[1]
@@ -84,46 +86,18 @@ class Rotation:
 
         :return:       Rotation object
 
-        Algorithm from NASA-TM-74839 "Euler Angles, Quaternions, and Transformation Matrices", page A-11
         """
         # TODO: add inference of units (e.g., if ang > 2*pi assume deg, else default to rad if not specified)
 
         s = np.sin
         c = np.cos
 
-        z, y, x  = Rotation._in_radians(z/2, y/2, x/2, units)
+        z, y, x  = Rotation._in_radians((z/2, y/2, x/2), units)
         rot = Rotation()
-        rot._qs =  s(x)*s(y)*s(z) + c(x)*c(y)*c(z)
-        rot._qx = -s(x)*s(y)*c(z) + s(z)*c(x)*c(y)
-        rot._qy =  s(x)*s(z)*c(y) + s(y)*c(x)*c(z)
-        rot._qz =  s(x)*c(y)*c(z) - s(y)*s(z)*c(x)
-
-        return rot
-
-    @staticmethod
-    def fromEulerYZX(y, z, x, units='rad'):
-        """
-        Factory method to construct Rotation object from euler angles.
-
-        :param y:      y angle
-        :param z:      z angle
-        :param x:      x angle
-        :param units:  'rad' or 'deg'
-
-        :return:       Rotation object
-
-        Algorithm from NASA-TM-74839 "Euler Angles, Quaternions, and Transformation Matrices", page A-7
-        """
-
-        s = np.sin
-        c = np.cos
-
-        z, y, x  = Rotation._in_radians(z/2, y/2, x/2, units)
-        rot = Rotation()
-        rot._qs = -s(x)*s(y)*s(z) + c(x)*c(y)*c(z)
-        rot._qx =  s(x)*s(y)*c(z) + s(z)*c(x)*c(y)
-        rot._qy =  s(x)*c(y)*c(z) + s(y)*s(z)*c(x)
-        rot._qz = -s(x)*s(z)*c(y) + s(y)*c(x)*c(z)
+        rot._qs = c(x)*c(y)*c(z) + s(x)*s(y)*s(z)
+        rot._qx = s(x)*c(y)*c(z) - c(x)*s(y)*s(z)
+        rot._qy = c(x)*s(y)*c(z) + s(x)*c(y)*s(z)
+        rot._qz = c(x)*c(y)*s(z) - s(x)*s(y)*c(z)
 
         return rot
 
@@ -146,7 +120,7 @@ class Rotation:
         """
         Returns the DCM representing the rotation.
 
-        :return: an numpy.ndarray
+        :return: a numpy.ndarray
         """
 
         d = self._qs
@@ -178,16 +152,37 @@ class Rotation:
 
         return dcm
 
-    def apply_to(self, other):
+    @property
+    def eulerZYX(self):
         """
-        Applies this rotation to another rotation or a vector.
+        Returns the equivalent Yaw, Pitch, Roll Euler sequence, in radians.
 
-        :param   other: vector
-
-        :return:
-
-        NOTE: this is equivalent to the overloading of the multiplication operator (see __mul__() below)
+        :return: a tuple
         """
+
+        qs, q1, q2, q3 = self.quat
+        roll  = np.arctan2(2 * (qs * q1 + q2 * q3), 1 - 2 * (q1**2 - q2**2))
+        pitch = np.arcsin(2 * (qs * q2 - q3 * q1))
+        yaw   = np.arctan2(2 * (qs * q3 + q1 * q2), 1 - 2 * (q2**2 + q3**2))
+
+        return yaw, pitch, roll
+
+    def angular_diff(self, rot):
+        """
+        Calculates the angle of rotation required to get from the orientation encapsulated herein to the
+        given Rotation object.
+
+        :param   rot: the other rotation object
+
+        :return: angular difference, in radians
+
+        Algorithm is for the geodesic distance between the normed quaternions, from "Metrics for 3D Rotations:
+        Comparison and Analysis"--Huynh
+        """
+
+        qprod = self.quat*rot.quat
+
+        return np.arccos(2*np.sum(qprod)**2 - 1)
 
     @property
     def inverse(self):
@@ -210,24 +205,23 @@ class Rotation:
         self._qs, self._qx, self._qy, self._qz = q/np.linalg.norm(q)
 
     @staticmethod
-    def _in_radians(a, b, c, units):
+    def _in_radians(ang, units):
         """
-        Just converts 3 angles to radians.
+        Just converts angles to radians.
 
-        :param a:
-        :param b:
-        :param c:
+        :param ang:   an iterable of angles or a single angle
         :param units: 'deg' for deg, anything else assumes rad
         :return:      angles in radians
         """
         # TODO: add valueError for units not being 'rad' or 'deg'
 
         if units == 'deg':
-            a *= Rotation.PIOVER180
-            b *= Rotation.PIOVER180
-            c *= Rotation.PIOVER180
+            if hasattr(ang, '__iter__'):
+                ang = tuple(a * Rotation.PIOVER180 for a in ang)
+            else:
+                ang *= Rotation.PIOVER180
 
-        return a, b, c
+        return ang
 
     @staticmethod
     def __mult_quat_quat(q1, q2):
